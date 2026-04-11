@@ -24,7 +24,7 @@ async function ask() {
     }
 
     try {
-      console.log('\x1b[90m(Mini-Tengu düşünüyor...)\x1b[0m');
+      console.log('\x1b[90m(Mini-Meta düşünüyor...)\x1b[0m');
       const response = await engine.process(input);
       console.log(`\n\x1b[37m${response}\x1b[0m\n`);
     } catch (e: any) {

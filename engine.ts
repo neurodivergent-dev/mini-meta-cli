@@ -9,20 +9,27 @@ export class MiniTenguEngine {
     this.client = new OllamaClient(model);
     this.messages.push({
       role: 'system',
-      content: `Sen Mini-Meta adında bir AI asistanısın. Claude Code'un yerel ve güçlü bir versiyonusun.
+      content: `Sen Mini-Meta adında, Claude Code genetiğine sahip, yerel bir 'EYLEM AJANI'sın.
       Şu an WINDOWS işletim sistemindesin. 
-      ÖNEMLİ: Sen bir sohbet botu değilsin, sen bir 'Action Agent' (Eylem Ajanı) sın. 
-      Sana bir dosya oluşturma veya işlem yapma görevi verildiğinde, ASLA doğrudan cevap verme. 
-      MUTLAKA bir araç çağrısı (TOOL: ...) yaparak başla.
+
+      ARAÇ KULLANIM PROTOKOLÜ:
+      Bir araç kullanman gerektiğinde SADECE şu formatı kullan:
+      <tool_call name="araç_adı" path="opsiyonel_dosya_yolu">
+      parametre_değeri_veya_içerik
+      </tool_call>
       
-      Eğer bir araç kullanman gerekiyorsa, cevabını ŞU FORMATTA BAŞLATMALISIN (Başka hiçbir giriş metni yazma): 
-      TOOL: [araç_adı] ARGS: [parametreler]
+      ÖNEMLİ: 'replace_file_content' için şu formatı kullan:
+      <tool_call name="replace_file_content" path="dosya.html">
+      SEARCH_BLOCK
+      eski_metin
+      REPLACE_BLOCK
+      yeni_metin
+      </tool_call>
+
+      MEVCUT ARAÇLAR:
+      ${tools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
       
-      Mevcut Araçlar:
-      ${tools.map(t => `- ${t.name}: ${t.description} (Format: ${t.parameters})`).join('\n')}
-      
-      KRİTİK: 'write_file' aracında içeriğin TAMAMINI tek seferde gönder. Dosya yollarında Windows formatı kullan.
-      Eğer bir araç kullandıysan, TOOL_RESULT geldikten sonra işe devam et. İşin bittiyse kullanıcıya nihai sonucu söyle.`
+      STRATEJİ: Önce bilgiyi topla (fetch/search), sonra işle, en son kaydet (write_file).`
     });
   }
 
@@ -31,37 +38,46 @@ export class MiniTenguEngine {
     
     let iterations = 0;
     while (iterations < 15) {
-      console.log(`\x1b[36m[Mini-Tengu] Mevcut mesaj geçmişi: ${this.messages.length}\x1b[0m`);
+      console.log(`\x1b[36m[Mini-Meta] Strateji Geliştiriliyor (Iterasyon: ${iterations + 1})\x1b[0m`);
       const response = await this.client.chat(this.messages);
-      const content = response.content;
+      let content = response.content.trim();
       this.messages.push({ role: 'assistant', content });
 
-      // Çok satırlı (multiline) içerikleri desteklemesi için /s bayrağını ekliyoruz
-      const toolMatch = content.match(/TOOL: (\w+)\s+ARGS:\s+([\s\S]+)/);
-      if (toolMatch) {
-        const toolName = toolMatch[1];
-        let toolArgs = toolMatch[2].trim();
+      // ÇOKLU ARAÇ AYIKLAMA (Süper Ajan Modu) 🌪️
+      const toolCalls = Array.from(content.matchAll(/<tool_call name="([^"]+)"(?:\s+(?:path|filename)="([^"]+)")?>([\s\S]*?)<\/tool_call>/g));
+      
+      if (toolCalls.length > 0) {
+        let multiFeedback = "";
+        
+        for (const match of toolCalls) {
+          const toolName = match[1];
+          const toolPath = match[2];
+          const toolContent = match[3].trim();
+          
+          const tool = tools.find(t => t.name === toolName);
+          if (tool) {
+            console.log(`\x1b[33m[Mini-Meta] EYLEM: ${toolName} ${toolPath || ''}\x1b[0m`);
+            
+            let args: any = {};
+            if (toolName === 'write_file' || toolName === 'replace_file_content') {
+              args = { path: toolPath, diff: toolContent, content: toolContent };
+            } else if (toolName === 'search' || toolName === 'fetch_url') {
+              args = { query: toolContent, url: toolContent };
+            } else {
+              try { args = JSON.parse(toolContent); } catch { args = { data: toolContent }; }
+            }
 
-        // KRİTİK DÜZELTME: Eğer args içinde başka bir "TOOL:" çağrısı sızmışsa onu kes
-        const nextToolIndex = toolArgs.indexOf('\nTOOL:');
-        if (nextToolIndex !== -1) {
-          toolArgs = toolArgs.substring(0, nextToolIndex).trim();
-        } else {
-           const nextToolIndexInline = toolArgs.indexOf('TOOL:');
-           if (nextToolIndexInline > 0) {
-             toolArgs = toolArgs.substring(0, nextToolIndexInline).trim();
-           }
+            try {
+              const result = tool.execute(args);
+              multiFeedback += `\n--- [SİSTEM GERİ BİLDİRİMİ: ${toolName}] ---\n${result}\n------------------------------`;
+            } catch (e: any) {
+              multiFeedback += `\n--- [SİSTEM HATASI: ${toolName}] ---\n${e.message}\n------------------------------`;
+            }
+          }
         }
-
-        const tool = tools.find(t => t.name === toolName);
-
-        if (tool) {
-          console.log(`\x1b[33m[Mini-Tengu] Araç Çağrılıyor: ${toolName}(${toolArgs})\x1b[0m`);
-          const result = tool.execute(toolArgs);
-          
-          const feedback = `\n--- [SİSTEM BİLGİSİ] ---\nARAÇ: ${toolName}\nSONUÇ: ${result}\n------------------------\nBİLGİ: İşlem başarıyla tamamlandı. Artık aynı aracı tekrar çağırmana GEREK YOK. Bir sonraki adıma geç veya kullanıcıya yanıt ver.`;
-          
-          this.messages.push({ role: 'user', content: feedback }); 
+        
+        if (multiFeedback) {
+          this.messages.push({ role: 'user', content: multiFeedback + "\n\nTüm araçlar çalıştırıldı. Sonuçları analiz et ve devam et." });
           iterations++;
           continue;
         }
@@ -69,7 +85,6 @@ export class MiniTenguEngine {
 
       return content;
     }
-
-    return "İşlem zaman aşımına uğradı.";
+    return "Limit aşıldı.";
   }
 }

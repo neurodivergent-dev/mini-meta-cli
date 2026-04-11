@@ -7,7 +7,7 @@ export interface Message {
 
 export class OllamaClient {
   private baseUrl = 'http://localhost:11434/api/chat';
-  private model = 'qwen3:14b';
+  private model = 'qwen3.5:4b';
 
   constructor(modelName?: string) {
     if (modelName) this.model = modelName;
