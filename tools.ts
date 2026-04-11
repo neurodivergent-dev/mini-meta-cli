@@ -48,17 +48,20 @@ export const tools: Tool[] = [
         const filePath = args.path || args.filename;
         const content = args.content;
         if (!filePath || content === undefined) return "Hata: 'path' veya 'content' eksik.";
-        
+
         // Gereksiz import yerine direkt Node.js path modülünü kullanalım (veya manual split)
         const parts = filePath.split(/[\\/]/);
         if (parts.length > 1) {
-            const dir = parts.slice(0, -1).join('/');
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-            }
+          const dir = parts.slice(0, -1).join('/');
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
         }
 
-        fs.writeFileSync(filePath, content);
+        // Markdown kod bloklarını (```xml, ```python vb.) temizle
+        const cleanContent = content.replace(/^```[\w]*\n/gm, '').replace(/\n```$/gm, '').replace(/```/g, '').trim();
+
+        fs.writeFileSync(filePath, cleanContent);
         return `Dosya '${filePath}' başarıyla kaydedildi.`;
       } catch (error: any) {
         return `Hata: ${error.message}`;
@@ -88,22 +91,22 @@ export const tools: Tool[] = [
       try {
         const url = args.url;
         if (!url) return "Hata: 'url' parametresi eksik.";
-        
+
         // curl ile sayfayı çekiyoruz (UTF-8 zorlaması ile)
         const output = execSync(`curl.exe -sL -m 20 "${url}"`, { encoding: 'utf8' });
-        
+
         // Smart Scraper Mantığı: 
         // 1. Script ve Style bloklarını tamamen siliyoruz
         let text = output.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
         text = text.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "");
-        
+
         // 2. Sadece anlamlı etiketlerin içeriğini topluyoruz (p, h1, h2, h3, article)
         const toolMatch = text.match(/<(p|h1|h2|h3|article)[^>]*>([\s\S]*?)<\/\1>/gim);
-        
+
         if (toolMatch) {
-            const cleanLines = toolMatch.map(m => m.replace(/<[^>]*>?/gm, '').trim()).filter(l => l.length > 20);
-            const content = cleanLines.join('\n\n');
-            if (content.length > 50) return content.slice(0, 8000);
+          const cleanLines = toolMatch.map(m => m.replace(/<[^>]*>?/gm, '').trim()).filter(l => l.length > 20);
+          const content = cleanLines.join('\n\n');
+          if (content.length > 50) return content.slice(0, 8000);
         }
 
         // 3. Fallback: Daha agresif temizlik
@@ -131,25 +134,25 @@ export const tools: Tool[] = [
       try {
         const category = args.category || 'sondakika';
         const rssUrls: any = {
-            'sondakika': 'https://www.trthaber.com/sondakika_articles.rss',
-            'dunya': 'https://www.trthaber.com/dunya_articles.rss',
-            'ekonomi': 'https://www.trthaber.com/ekonomi_articles.rss'
+          'sondakika': 'https://www.trthaber.com/sondakika_articles.rss',
+          'dunya': 'https://www.trthaber.com/dunya_articles.rss',
+          'ekonomi': 'https://www.trthaber.com/ekonomi_articles.rss'
         };
         const url = rssUrls[category] || rssUrls['sondakika'];
-        
+
         const output = execSync(`curl.exe -sL -m 20 "${url}"`, { encoding: 'utf8' });
-        
+
         // Hızlı bir regex XML parse
         const news: string[] = [];
         const items = output.split('<item>').slice(1, 6); // İlk 5 haberi alalım
-        
+
         items.forEach(item => {
-            const title = item.match(/<title>(.*?)<\/title>/)?.[1] || 'Başlık Yok';
-            const description = item.match(/<description>(.*?)<\/description>/)?.[1] || 'Özet Yok';
-            const link = item.match(/<link>(.*?)<\/link>/)?.[1] || '';
-            const cleanTitle = title.replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
-            const cleanDesc = description.replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/<[^>]*>?/gm, '').trim();
-            news.push(`📰 **${cleanTitle}**\n📝 ${cleanDesc.slice(0, 150)}...\n🔗 ${link}`);
+          const title = item.match(/<title>(.*?)<\/title>/)?.[1] || 'Başlık Yok';
+          const description = item.match(/<description>(.*?)<\/description>/)?.[1] || 'Özet Yok';
+          const link = item.match(/<link>(.*?)<\/link>/)?.[1] || '';
+          const cleanTitle = title.replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
+          const cleanDesc = description.replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/<[^>]*>?/gm, '').trim();
+          news.push(`📰 **${cleanTitle}**\n📝 ${cleanDesc.slice(0, 150)}...\n🔗 ${link}`);
         });
 
         return news.join('\n\n') || "Haber beslemesi şu an boş veya ulaşılamıyor.";
@@ -189,31 +192,31 @@ export const tools: Tool[] = [
 
         const parts = diff.split('REPLACE_BLOCK');
         if (parts.length < 2) return "Hata: 'REPLACE_BLOCK' bulunamadı.";
-        
+
         const oldText = parts[0].replace('SEARCH_BLOCK', '').trim();
         const newText = parts[1].trim();
 
         let content = fs.readFileSync(filePath, 'utf8');
-        
+
         // Esnek Eşleştirme (Whitespace normalization)
         const normalize = (str: string) => str.replace(/\s+/g, ' ').trim();
         const normalizedContent = normalize(content);
         const normalizedOldText = normalize(oldText);
 
         if (!normalizedContent.includes(normalizedOldText)) {
-            // DEBUG: Ajan yanlış görüyorsa ona gerçeği göster
-            const snippet = content.slice(0, 300);
-            return `Hata: Değiştirilmek istenen metin dosyada bulunamadı.\nDOSYA İÇERİĞİNDEN KESİT:\n${snippet}\n...\nLütfen metni yukarıdaki gerçek içeriğe göre tam kopyala.`;
+          // DEBUG: Ajan yanlış görüyorsa ona gerçeği göster
+          const snippet = content.slice(0, 300);
+          return `Hata: Değiştirilmek istenen metin dosyada bulunamadı.\nDOSYA İÇERİĞİNDEN KESİT:\n${snippet}\n...\nLütfen metni yukarıdaki gerçek içeriğe göre tam kopyala.`;
         }
 
         if (content.includes(oldText)) {
-            const updatedContent = content.replace(oldText, newText);
-            fs.writeFileSync(filePath, updatedContent);
-            return `Dosya '${filePath}' başarıyla güncellendi.`;
+          const updatedContent = content.replace(oldText, newText);
+          fs.writeFileSync(filePath, updatedContent);
+          return `Dosya '${filePath}' başarıyla güncellendi.`;
         } else {
-            // Normalize hali uyuyor ama kendi uymuyorsa zorla (veya hata ver)
-            const updatedContent = content.replace(oldText.split('\n')[0], newText); // riskli ama denenebilir
-            return `Hata: Boşluk farkı çok büyük. Lütfen dosyadan tam kopyala.`;
+          // Normalize hali uyuyor ama kendi uymuyorsa zorla (veya hata ver)
+          const updatedContent = content.replace(oldText.split('\n')[0], newText); // riskli ama denenebilir
+          return `Hata: Boşluk farkı çok büyük. Lütfen dosyadan tam kopyala.`;
         }
       } catch (error: any) {
         return `Hata: ${error.message}`;

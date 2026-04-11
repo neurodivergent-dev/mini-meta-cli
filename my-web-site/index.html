@@ -3,59 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modern Landing Page - 2026</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <title>Mini-Meta - Yapay Zeka Asistanı</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 40px 0;
+        }
+        
+        h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .subtitle {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 40px 0;
+        }
+        
+        .feature-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .feature-icon {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: #fff;
+            color: #667eea;
+            padding: 15px 40px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .cta-button:hover {
+            background: #667eea;
+            color: #fff;
+            transform: scale(1.05);
+        }
+        
+        footer {
+            text-align: center;
+            padding: 30px 0;
+            opacity: 0.8;
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <nav>
-            <div class="logo">MyWeb</div>
-            <ul class="nav-links">
-                <li><a href="#features">Özellikler</a></li>
-                <li><a href="#contact">İletişim</a></li>
-            </ul>
-        </nav>
-    </header>
-
-    <section class="hero">
-        <h1>2026 için Modern, Karanlık Tasarım</h1>
-        <p>Yaratıcı ve etkileyici bir landing page deneyimi</p>
-        <a href="#contact" class="cta-button">Başlamak İçin Tıkla</a>
-    </section>
-
-    <section class="features" id="features">
-        <h2>Özellikler</h2>
-        <div class="feature-grid">
+    <div class="container">
+        <header>
+            <h1>🤖 Mini-Meta</h1>
+            <p class="subtitle">Yapay Zeka Asistanınız - Kod, Yazılım ve Tasarım Dostunuz</p>
+        </header>
+        
+        <section class="features">
             <div class="feature-card">
-                <h3>Responsive Tasarım</h3>
-                <p>Tüm cihazlarda mükemmel görünüm</p>
+                <div class="feature-icon">💻</div>
+                <h3>Kodlama</h3>
+                <p>Yapay zeka ile kod yazın, düzeltin ve optimize edin.</p>
             </div>
+            
             <div class="feature-card">
-                <h3>Modern Animasyonlar</h3>
-                <p>Interaktif ve etkileyici efektler</p>
+                <div class="feature-icon">🔧</div>
+                <h3>Yazılım</h3>
+                <p>Yerel araçlar ve yazılım projeleriniz için asistan.</p>
             </div>
+            
             <div class="feature-card">
-                <h3>Dark Mode</h3>
-                <p>Karanlık tema ile rahat kullanım</p>
+                <div class="feature-icon">🎨</div>
+                <h3>Tasarım</h3>
+                <p>Modern ve kullanıcı dostu web siteleri oluşturun.</p>
             </div>
-        </div>
-    </section>
-
-    <section class="contact" id="contact">
-        <h2>İletişim</h2>
-        <form id="contactForm">
-            <input type="text" placeholder="Adınız" required>
-            <input type="email" placeholder="E-posta" required>
-            <textarea placeholder="Mesajınız" required></textarea>
-            <button type="submit">Gönder</button>
-        </form>
-    </section>
-
-    <footer>
-        <p>&copy; 2026 MyWeb. Tüm hakları saklıdır.</p>
-    </footer>
-
-    <script src="script.js"></script>
+        </section>
+        
+        <section style="text-align: center; margin: 40px 0;">
+            <h2>Başka bir şey yapmamı ister misiniz?</h2>
+            <a href="#" class="cta-button">Başlayalım!</a>
+        </section>
+        
+        <footer>
+            <p>© 2026 Mini-Meta - Tüm Hakları Saklıdır</p>
+        </footer>
+    </div>
 </body>
 </html>
