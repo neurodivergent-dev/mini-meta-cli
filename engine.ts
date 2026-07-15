@@ -1,150 +1,181 @@
-import { OllamaClient, Message } from './ollama';
-import { tools } from './tools';
+/**
+ * Mini-Meta agent loop.
+ * Think → Act (tools) → Observe → Refine until <done> or max iterations.
+ */
+import { OllamaClient } from './ollama';
+import { MessageHistory } from './history';
+import { SessionState } from './state';
+import { createToolRegistry, findTool } from './tools/index';
+import {
+  parseToolCalls,
+  stripToolCalls,
+  hasDoneMarker,
+} from './parser';
+import {
+  buildSystemPrompt,
+  buildFewShotMessages,
+  toolResultFeedback,
+} from './prompt';
+import type { EngineConfig, Tool } from './types';
 
 export class MiniTenguEngine {
   private client: OllamaClient;
-  private messages: Message[] = [];
+  private history: MessageHistory;
+  private state: SessionState;
+  private tools: Tool[];
+  private maxIterations: number;
 
-  constructor(model?: string) {
-    this.client = new OllamaClient(model);
-    this.messages.push({
-      role: 'system',
-      content: `Sen Mini-Meta'sın, Windows üzerinde çalışan yerel bir EYLEM AJANI'sın.
-Kullanıcıyla Türkçe konuş. Görevleri yerine getirmek için araçları MUTLAKA kullan.
-Araç çağırırken SADECE şu formatı kullan:
-- Dosya oku: <tool_call name="read_file" path="dosya.txt" />
-- İnternet ara: <tool_call name="search" query="arama sorgusu" />
-- Komut çalıştır: <tool_call name="shell">dir /b</tool_call>
+  constructor(config: EngineConfig | string = {}) {
+    // Back-compat: constructor(model?: string)
+    const cfg: EngineConfig =
+      typeof config === 'string' ? { model: config } : config;
 
-KURALLAR:
-- Bir görev verildiğinde HEMEN araç çağrısı yap, sormadan harekete geç.
-- Yeteneklerini anlatırken araç isimlerini düz metin olarak yaz, XML etiketi KULLANMA.
-- İşin bittiğinde <done> yaz.
-- Windows CMD kullan: dir, type, findstr. Linux komutları (ls, cat) KULLANMA.`
-    });
-    // Few-shot: Modele araç formatını çeşitli örneklerle öğret
-    this.messages.push({ role: 'user', content: 'bu klasördeki dosyaları göster' });
-    this.messages.push({ role: 'assistant', content: 'Hemen bakıyorum.\n\n<tool_call name="shell">dir /b</tool_call>' });
-    this.messages.push({ role: 'user', content: '[SİSTEM: shell]\nengine.ts\nindex.ts\nollama.ts\ntools.ts\nREADME.md\n\nAnaliz et ve devam et. Bittiğinde <done> yaz.' });
-    this.messages.push({ role: 'assistant', content: 'Bu klasörde şu dosyalar var:\n- engine.ts\n- index.ts\n- ollama.ts\n- tools.ts\n- README.md\n\n<done>' });
+    const cwd = cfg.cwd || process.cwd();
+    this.client = new OllamaClient(cfg.model);
+    this.history = new MessageHistory(cfg.maxRecentMessages ?? 12);
+    this.state = new SessionState(cwd);
+    this.tools = createToolRegistry(this.state);
+    this.maxIterations = cfg.maxIterations ?? 15;
+
+    const systemContent = buildSystemPrompt(this.tools, cwd);
+    const fewShot = buildFewShotMessages();
+    this.history.setSystemAndFewShot(
+      { role: 'system', content: systemContent },
+      fewShot,
+    );
+  }
+
+  get modelName(): string {
+    return this.client.modelName;
+  }
+
+  get todos(): string {
+    return this.state.formatTodos();
+  }
+
+  clearHistory(): void {
+    this.history.clearConversation();
   }
 
   async process(userInput: string): Promise<string> {
-    this.messages.push({ role: 'user', content: userInput });
+    this.history.push({ role: 'user', content: userInput });
 
     let iterations = 0;
     let consecutiveErrors = 0;
-    while (iterations < 10) {
-      // İlk 5 mesaj: system + few-shot örnekler (her zaman gönder)
-      // Son 4 mesaj: gerçek konuşma geçmişi
-      const fewShotCount = 5;
-      const recentMessages = this.messages.slice(fewShotCount).slice(-4);
-      const slidingMessages = [...this.messages.slice(0, fewShotCount), ...recentMessages];
-      console.log(`\x1b[36m[Mini-Meta] Düşünüyor...\x1b[0m`);
+    let lastAssistant = '';
+
+    while (iterations < this.maxIterations) {
+      console.log(`\x1b[36m[Mini-Meta] Düşünüyor... (${iterations + 1}/${this.maxIterations})\x1b[0m`);
 
       try {
-        const response = await this.client.chat(slidingMessages);
-        consecutiveErrors = 0; // başarılı yanıt, sıfırla
-        let content = response.content?.trim() || '';
+        const response = await this.client.chat(this.history.forApi());
+        consecutiveErrors = 0;
+        const content = response.content?.trim() || '';
 
         if (!content) {
-          this.messages.push({ role: 'user', content: "Hata: Yanıt boş." });
+          this.history.push({
+            role: 'user',
+            content: 'Hata: Yanıt boştu. Araç çağır veya <done> yaz.',
+          });
           iterations++;
           continue;
         }
 
-        // Hem normal, hem kapanmamış hem de self-closing etiketleri yakalayan tek bir esnek RegEx
-        const toolPattern = /<tool_call\s+([^>]+)>(?:([\s\S]*?)<\/tool_call>)?/gi;
-
-        interface ParsedCall { name: string; path?: string; content: string; raw: string; }
-        const parsedCalls: ParsedCall[] = [];
-
-        for (const match of content.matchAll(toolPattern)) {
-          const attrs = match[1];
-          const body = match[2]?.trim() || '';
-          
-          const nameMatch = attrs.match(/name=["']([^"']+)["']/);
-          const pathMatch = attrs.match(/(?:path|filename)=["']([^"']+)["']/);
-          const extraMatch = attrs.match(/(?:category|query|url|text|command)=["']([^"']+)["']/);
-          
-          if (nameMatch) {
-            parsedCalls.push({
-              name: nameMatch[1],
-              path: pathMatch?.[1],
-              content: body || extraMatch?.[1] || '',
-              raw: match[0]
-            });
-          }
-        }
-
-        // Temizleme RegEx'ini de kapanmayan etiketleri temizleyecek şekilde güncelleyin:
-        const cleanPattern = /<tool_call\s+[^>]+>(?:[\s\S]*?<\/tool_call>)?/gi;
-        const assistantText = content.replace(cleanPattern, "").trim();
+        lastAssistant = content;
+        const assistantText = stripToolCalls(content);
         if (assistantText) {
           console.log(`\x1b[35m[Ajan]:\x1b[0m ${assistantText}`);
         }
 
-        this.messages.push({ role: 'assistant', content });
+        this.history.push({ role: 'assistant', content });
 
-        if (parsedCalls.length > 0) {
-          let multiFeedback = "";
-          let realCallCount = 0;
+        const calls = parseToolCalls(content);
+        if (calls.length > 0) {
+          const results: { name: string; output: string }[] = [];
 
-          // Placeholder/örnek içerikler — bunları gerçek çağrı olarak çalıştırma
-          // YENİ:
-          const placeholders = [
-            'komut', 'içerik', 'içerik buraya', 'aranacak metin', 'aranan kelime',
-            'url', 'sorgu', 'arama sorgusu', 'kategori', 'dosya_yolu', 'yol',
-            'dosya.txt', 'yeni.txt', 'https://example.com',
-            'eski metin', 'yeni metin', 'sondakika', 'dir /b'
-          ];
+          // Partition: run concurrency-safe tools first in parallel, then serial
+          const safe = calls.filter((c) => {
+            const t = findTool(this.tools, c.name);
+            return t?.isConcurrencySafe;
+          });
+          const unsafe = calls.filter((c) => {
+            const t = findTool(this.tools, c.name);
+            return t && !t.isConcurrencySafe;
+          });
+          const unknown = calls.filter((c) => !findTool(this.tools, c.name));
 
-          for (const call of parsedCalls) {
-            let toolName = call.name;
-            const toolPath = call.path;
-            const toolContent = call.content;
-
-            // Placeholder kontrolü
-            if (placeholders.includes(toolContent.toLowerCase()) || placeholders.includes(toolPath?.toLowerCase() || '')) {
-              continue;
-            }
-
-            const aliases: any = { 'read': 'read_file', 'write': 'write_file', 'replace': 'replace_file_content' };
-            if (aliases[toolName]) toolName = aliases[toolName];
-
-            const tool = tools.find(t => t.name === toolName);
-            if (tool) {
-              realCallCount++;
-              console.log(`\x1b[33m[Mini-Meta] EYLEM: ${tool.name} ${toolPath || ''}\x1b[0m`);
-              const result = tool.execute({ path: toolPath, content: toolContent, diff: toolContent, command: toolContent, query: toolContent, text: toolContent, category: toolContent });
-              multiFeedback += `\n[SİSTEM: ${tool.name}]\n${result}\n`;
-            }
+          for (const call of unknown) {
+            results.push({
+              name: call.name,
+              output: `Bilinmeyen araç: ${call.name}. Kullanılabilir: ${this.tools.map((t) => t.name).join(', ')}`,
+            });
           }
 
-          if (realCallCount > 0) {
-            this.messages.push({ role: 'user', content: multiFeedback + "\nAnaliz et ve devam et. Bittiğinde <done> yaz." });
+          // Parallel batch for read-only
+          if (safe.length > 0) {
+            const parallel = await Promise.all(
+              safe.map(async (call) => {
+                const tool = findTool(this.tools, call.name)!;
+                console.log(
+                  `\x1b[33m[Mini-Meta] EYLEM: ${tool.name} ${call.args.path || call.args.pattern || call.args.query || call.args.url || ''}\x1b[0m`,
+                );
+                const output = await Promise.resolve(tool.execute(call.args));
+                return { name: tool.name, output };
+              }),
+            );
+            results.push(...parallel);
+          }
+
+          // Serial for write/shell/edit
+          for (const call of unsafe) {
+            const tool = findTool(this.tools, call.name)!;
+            console.log(
+              `\x1b[33m[Mini-Meta] EYLEM: ${tool.name} ${call.args.path || call.args.command || ''}\x1b[0m`,
+            );
+            const output = await Promise.resolve(tool.execute(call.args));
+            results.push({ name: tool.name, output });
+          }
+
+          if (results.length > 0) {
+            const feedback = toolResultFeedback(results);
+            // Preview short results
+            for (const r of results) {
+              const preview = r.output.slice(0, 200).replace(/\n/g, ' ');
+              console.log(`\x1b[90m  ↳ ${r.name}: ${preview}${r.output.length > 200 ? '…' : ''}\x1b[0m`);
+            }
+            this.history.push({ role: 'user', content: feedback });
             iterations++;
             continue;
           }
         }
 
-        if (content.toLowerCase().includes("<done>")) return content.replace(/<done>/gi, "").trim();
-        return content;
+        if (hasDoneMarker(content)) {
+          return stripToolCalls(content).replace(/<done\s*\/?>/gi, '').trim();
+        }
 
-      } catch (e: any) {
+        // No tools and no done — treat as final answer
+        return assistantText || content;
+      } catch (e: unknown) {
         consecutiveErrors++;
-        const isTimeout = e.message?.includes('timeout');
-        const isEOF = e.message === 'EOF';
-        console.log(`\x1b[31m[Hata] ${isTimeout ? 'Ollama zaman aşımı.' : isEOF ? 'Model yüklenemedi (EOF). Ollama\'yı yeniden başlatmayı deneyin.' : e.message}\x1b[0m`);
+        const msg = (e as Error).message || String(e);
+        const isTimeout = msg.includes('timeout');
+        const isEOF = msg === 'EOF';
+        console.log(
+          `\x1b[31m[Hata] ${isTimeout ? 'Ollama zaman aşımı.' : isEOF ? "Model yüklenemedi (EOF). Ollama'yı yeniden başlat." : msg}\x1b[0m`,
+        );
 
         if (consecutiveErrors >= 2) {
-          console.log(`\x1b[31m[Mini-Meta] Ardışık ${consecutiveErrors} hata. Vazgeçiliyor.\x1b[0m`);
-          return "Ollama bağlantı hatası. 'ollama serve' komutunu kontrol edin.";
+          console.log(
+            `\x1b[31m[Mini-Meta] Ardışık ${consecutiveErrors} hata. Vazgeçiliyor.\x1b[0m`,
+          );
+          return "Ollama bağlantı hatası. 'ollama serve' ve model adını kontrol edin.";
         }
         iterations++;
-        continue;
       }
     }
-    return "Limit aşıldı.";
+
+    return lastAssistant
+      ? `Limit aşıldı. Son yanıt:\n${stripToolCalls(lastAssistant)}`
+      : 'Limit aşıldı.';
   }
 }

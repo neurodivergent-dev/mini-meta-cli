@@ -1,59 +1,106 @@
-# 🌌 Mini-Meta CLI (v1.5)
+# Mini-Meta CLI v2.0
 
-**A local-first, lightweight agentic CLI powered by Ollama, inspired by the reasoning DNA of Claude Code.**
+**Local-first agentic CLI** — Ollama üzerinde çalışan, sıfırdan yazılmış hafif bir kodlama ajanı.
 
-Mini-Meta is an autonomous agent designed to run entirely on your local machine. It leverages the power of open-source models (like Qwen 2.5/3.5) to navigate your file system, execute shell commands, and conduct internet research without any external API dependencies.
+## Ne değişti? (v1.5 → v2.0)
 
-## 🚀 Key Features
+Modüler bir mimariye geçildi ve araç seti genişletildi:
 
-- **Autonomous Reasoning:** Uses a "Think-Act-Refine" loop to complete complex tasks.
-- **Battle-Hardened Protocol:** Uses a Claude-style XML tagging system instead of fragile JSON, making it extremely resilient to formatting errors during code generation.
-- **Smart Scraper & News:** 
-  - `get_news`: Bypasses bot detection using RSS feeds (TRT Haber, World, Economy).
-  - `fetch_url`: Smart HTML cleaning to extract only meaningful article text.
-- **Local Sovereignty:** 100% offline. No API keys, no data harvesting.
-- **Windows Optimized:** Built specifically for PowerShell/CMD environments.
-
-## 🛠️ Tool Suite
-
-| Tool | Description |
+| Alan | Mini-Meta |
 | :--- | :--- |
-| `shell` | Execute Windows commands (CMD/PS). |
-| `write_file` | Create or overwrite files with recursive directory creation. |
-| `read_file` | Analyze existing code files. |
-| `replace_file_content` | **Smart Replace** (Claude Style): Target specific blocks without rewriting the whole file. |
-| `get_news` | Real-time news aggregation from trusted RSS sources. |
-| `fetch_url` | Smart web scraping for research and technical docs. |
-| `search` | General web searching for deep dives. |
+| Ajan döngüsü | `engine.ts` Think-Act-Observe döngüsü |
+| Dosya okuma | `read_file` → `N→satır` formatı, offset/limit |
+| Dosya düzenleme | `edit_file` — exact old/new string, tırnak normalizasyonu, replace_all |
+| Arama | `grep`, `glob` (ripgrep + fallback) |
+| Görev takibi | `todo_write` oturum listesi |
+| Shell güvenliği | `permissions.ts` yıkıcı komut engeli |
+| Konuşma geçmişi | `history.ts` sliding window |
+| System prompt | `prompt.ts` dinamik araç belgeleri |
 
-## 🛠️ Installation
+### Mimari
 
-1. **Prerequisites:**
-   - [Ollama](https://ollama.com/) (Recommended: `qwen2.5:7b` or `qwen3.5:4b`)
-   - [Bun](https://bun.sh/) runtime.
-
-2. **Setup:**
-   ```bash
-   git clone <repo-url>
-   bun install
-   ```
-
-3. **Configure Model:**
-   Open `ollama.ts` to set your model. For maximum speed, use 3B-7B models.
-
-## 🎮 Usage
-
-```bash
-bun run index.ts
+```
+mini-meta-cli/
+  index.ts          # REPL girişi
+  engine.ts         # Ajan döngüsü
+  ollama.ts         # LLM istemcisi (fetch)
+  parser.ts         # XML <tool_call> parser
+  prompt.ts         # System prompt
+  history.ts        # Mesaj geçmişi
+  permissions.ts    # Shell guard
+  state.ts          # Todos + okunan dosyalar
+  types.ts
+  tools/
+    shell.ts read.ts write.ts edit.ts
+    grep.ts glob.ts todo.ts web.ts
+    index.ts
 ```
 
-### Pro-Tips:
-- "Build a modern landing page in `my-web-site` folder with HTML/CSS/JS."
-- "Get the latest news about economy and save it to `economy_report.txt`."
-- "Find all blue colors in `style.css` and change them to gold (#FFD700)."
+## Araçlar
 
-## 🧬 Heritage
-Mini-Meta was refactored from agentic logic found in advanced coding assistants, optimized for Bun/TS and local LLM performance. Built to be fast, private, and capable.
+| Araç | Açıklama |
+| :--- | :--- |
+| `shell` | Windows CMD/PS (yıkıcı komutlar engelli) |
+| `read_file` | Satır numaralı okuma, offset/limit |
+| `write_file` | Oluştur / üzerine yaz |
+| `edit_file` | Exact replace (`---OLD---` / `---NEW---`) |
+| `grep` | Regex arama (rg veya fallback) |
+| `glob` | Dosya deseni (`**/*.ts`) |
+| `todo_write` | Çok adımlı görev takibi |
+| `fetch_url` | HTML → temiz metin |
+| `get_news` | TRT RSS (sondakika/dunya/ekonomi) |
+| `search` | Web arama |
+
+## Kurulum
+
+1. [Ollama](https://ollama.com/) — örn. `qwen2.5:7b`, `gemma2:9b`
+2. [Bun](https://bun.sh/)
+
+```bash
+cd mobile/mini-meta-cli
+bun run index.ts
+# veya
+bun run start -- --model=qwen2.5:7b
+```
+
+Ortam değişkenleri:
+
+- `MINI_META_MODEL` — varsayılan model
+- `OLLAMA_HOST` — örn. `http://localhost:11434`
+
+## Kullanım
+
+```
+❯ bu klasördeki TypeScript dosyalarını bul
+❯ engine.ts process metodunu oku ve özetle
+❯ my-web-site içinde landing page yap
+❯ ekonomi haberlerini economy_report.txt'ye kaydet
+```
+
+REPL komutları: `exit` · `clear` · `todos` · `help`
+
+## Protokol
+
+Yerel modeller için JSON tool-calling yerine Claude tarzı XML:
+
+```xml
+<tool_call name="read_file" path="engine.ts" />
+<tool_call name="edit_file" path="app.ts">
+---OLD---
+const x = 1;
+---NEW---
+const x = 2;
+</tool_call>
+<tool_call name="shell">dir /b</tool_call>
+```
+
+Bittiğinde: `<done>`
+
+## Notlar
+
+- **Edit öncesi read zorunlu** — model önce dosyayı görmeden düzenleyemez.
+- Context window için few-shot + son N mesaj gönderilir.
+- axios kaldırıldı; Ollama `fetch` ile konuşur (Bun native).
 
 ---
-*Built for the hackers, by the hackers. 🦄🚀🦾*
+*Local LLM'ler için optimize edilmiş, hafif bir agentic CLI.*

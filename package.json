@@ -1,0 +1,22 @@
+{
+  "name": "mini-meta-cli",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Local-first agentic CLI powered by Ollama",
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.ts",
+    "cli": "bun run index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "keywords": [
+    "ollama",
+    "agent",
+    "cli",
+    "local-llm"
+  ],
+  "license": "MIT"
+}
