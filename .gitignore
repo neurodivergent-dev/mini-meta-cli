@@ -1,0 +1,25 @@
+bun.lock
+node_modules/
+dist/
+.bun/
+.npm/
+.yarn/
+.pnpm/
+
+# Lock files
+bun.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Logs
+npm-debug.log*
+.bun/debug.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*
